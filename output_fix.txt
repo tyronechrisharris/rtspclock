@@ -1,5 +1,0 @@
-Port 8554 is available.
-Backend Pipeline: appsrc name=source is-live=true block=true format=time do-timestamp=true caps=video/x-raw,format=BGR,width=640,height=480,framerate=5/1 ! videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=512 ! h264parse ! rtph264pay config-interval=1 pt=96 ! udpsink host=224.0.0.1 port=5400 auto-multicast=true async=false
-Backend Producer started (Multicast 224.0.0.1:5400).
-Client Launch String: udpsrc multicast-group=224.0.0.1 port=5400 auto-multicast=true ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96 ! rtph264depay ! h264parse ! rtph264pay name=pay0 config-interval=1 pt=96
-RTSP Server running at rtsp://localhost:8554/cam1 ... /cam100
