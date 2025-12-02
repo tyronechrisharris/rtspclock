@@ -161,10 +161,15 @@ class RTSPServer(GstRtspServer.RTSPServer):
         pool.set_max_threads(200)
         self.set_thread_pool(pool)
 
+        print("Pre-warming 100 RTSP endpoints (Always-On Mode)...")
         for i in range(1, 101):
             factory = GstRtspServer.RTSPMediaFactory()
             factory.set_launch(launch_str)
             factory.set_shared(True) # Share the UDP source pipeline among clients of SAME mount point
+
+            # SUSPEND_MODE_NONE: The pipeline is active immediately and never stops.
+            # This emulates hardware cameras that are always encoding, ensuring instant client connection.
+            factory.set_suspend_mode(GstRtspServer.RTSPSuspendMode.NONE)
 
             mounts.add_factory(f"/cam{i}", factory)
 
