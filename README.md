@@ -11,20 +11,39 @@ A high-performance synthetic camera simulator designed for macOS (Apple Silicon)
 
 ## Prerequisites
 
-*   macOS (Apple Silicon recommended for performance)
-*   Homebrew installed
+*   **macOS:** Homebrew installed.
+*   **Windows:**
+    *   Python 3.10+ installed.
+    *   **GStreamer MSVC 64-bit** installed (Runtime and Development installers).
+    *   `ffmpeg` installed and added to PATH.
 
 ## Installation
 
+### macOS
 1.  **Run the setup script:**
-    This script will install all required GStreamer dependencies via Homebrew, create a Python virtual environment, and install Python requirements.
     ```bash
     ./setup_env.sh
     ```
-
 2.  **Activate the environment:**
     ```bash
     source venv/bin/activate
+    ```
+
+### Windows
+1.  **Install GStreamer:**
+    *   Download from [gstreamer.freedesktop.org](https://gstreamer.freedesktop.org/download/).
+    *   Select **MSVC 64-bit**.
+    *   Install **BOTH** the `runtime` (msi) and `development` (msi) packages.
+    *   Ensure the `bin` directory (e.g., `C:\gstreamer\1.0\msvc_x86_64\bin`) is in your system PATH (or rely on the script detection).
+
+2.  **Run the setup script (PowerShell):**
+    ```powershell
+    .\setup_env.ps1
+    ```
+
+3.  **Activate the environment:**
+    ```powershell
+    .\venv\Scripts\Activate.ps1
     ```
 
 ## Usage
@@ -44,9 +63,14 @@ python rtsp_sim_v2.py
 
 To simulate 100 concurrent clients connecting to the server:
 
-```bash
-./stress_test.sh
-```
+*   **macOS:**
+    ```bash
+    ./stress_test.sh
+    ```
+*   **Windows:**
+    ```powershell
+    .\stress_test.ps1
+    ```
 
 This script spawns 100 `ffmpeg` processes that consume the stream without decoding it (saving client-side CPU).
 

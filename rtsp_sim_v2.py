@@ -1,16 +1,36 @@
 import sys
-import gi
-import cv2
-import time
+import os
+import platform
 import socket
 import threading
 import signal
+import time
 import numpy as np
 from datetime import datetime
 
+# Platform-specific Setup for GStreamer
+if platform.system() == "Windows":
+    # On Windows, we often need to ensure the GStreamer bin directory is in PATH
+    # so that the DLLs can be loaded by ctypes/PyGObject.
+    # Typical installation path: C:\gstreamer\1.0\msvc_x86_64\bin
+    gst_path = os.environ.get("GSTREAMER_1_0_ROOT_MSVC_X86_64")
+    if gst_path:
+        bin_path = os.path.join(gst_path, "bin")
+        if os.path.exists(bin_path):
+             # For Python 3.8+ on Windows, os.add_dll_directory is safer/required for ctypes
+            try:
+                os.add_dll_directory(bin_path)
+            except AttributeError:
+                pass # Python < 3.8
+            # Also add to PATH for good measure
+            os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+
+import gi
+# Ensure we check required versions before importing repositories
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
+import cv2
 
 # Configuration
 MULTICAST_GROUP = "224.0.0.1"
@@ -53,7 +73,12 @@ class BackendProducer:
         )
 
         print(f"Backend Pipeline: {pipeline_str}")
-        self.pipeline = Gst.parse_launch(pipeline_str)
+        try:
+            self.pipeline = Gst.parse_launch(pipeline_str)
+        except Exception as e:
+            print(f"Error parsing pipeline: {e}")
+            raise
+
         self.appsrc = self.pipeline.get_by_name('source')
 
         # Start playing immediately
@@ -91,14 +116,6 @@ class BackendProducer:
             data = img.tobytes()
             buf = Gst.Buffer.new_allocate(None, len(data), None)
             buf.fill(0, data)
-
-            # Set timestamp
-            # buf.pts = self.appsrc.get_current_running_time() # Might need logic here
-            # For appsrc with format=time, pushing buffer without PTS might rely on do-timestamp=true,
-            # or we should set it.
-            # Let's try to set it roughly or leave it if 'videoconvert' handles it?
-            # Actually, x264enc works best with timestamps.
-            # But let's stick to simple first.
 
             self.appsrc.emit("push-buffer", buf)
 
@@ -140,10 +157,6 @@ class RTSPServer(GstRtspServer.RTSPServer):
             factory.set_launch(launch_str)
             factory.set_shared(True) # Share the UDP source pipeline among clients of SAME mount point
 
-            # We don't really need SUSPEND_MODE_NONE for the client side because the backend is always running.
-            # But we can set it to reduce startup latency.
-            # factory.set_suspend_mode(GstRtspServer.RTSPSuspendMode.NONE)
-
             mounts.add_factory(f"/cam{i}", factory)
 
         # Track clients
@@ -163,7 +176,12 @@ class RTSPServer(GstRtspServer.RTSPServer):
 
 def main():
     # Initialize GStreamer
-    Gst.init(None)
+    try:
+        Gst.init(None)
+    except Exception as e:
+        print(f"Failed to initialize GStreamer: {e}")
+        print("Please ensure GStreamer is installed and the bin directory is in your PATH.")
+        sys.exit(1)
 
     # Port Check
     if not check_port(RTSP_PORT):
