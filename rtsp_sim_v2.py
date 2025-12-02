@@ -62,6 +62,7 @@ class BackendProducer:
         # Pipeline: appsrc -> x264enc -> rtph264pay -> udpsink (Multicast)
         # Note: 'videoconvert' ensures format compatibility.
         # 'h264parse' and 'rtph264pay' ensure we send proper RTP packets.
+        # Added buffer-size=524288 (512KB) to udpsink to reduce packet loss probability during high load
         pipeline_str = (
             f"appsrc name=source is-live=true block=true format=time do-timestamp=true "
             f"caps=video/x-raw,format=BGR,width={WIDTH},height={HEIGHT},framerate={FPS}/1 ! "
@@ -69,7 +70,7 @@ class BackendProducer:
             f"x264enc tune=zerolatency speed-preset=ultrafast bitrate=512 ! "
             f"h264parse ! "
             f"rtph264pay config-interval=1 pt=96 ! "
-            f"udpsink host={MULTICAST_GROUP} port={MULTICAST_PORT} auto-multicast=true async=false"
+            f"udpsink host={MULTICAST_GROUP} port={MULTICAST_PORT} auto-multicast=true async=false buffer-size=524288"
         )
 
         print(f"Backend Pipeline: {pipeline_str}")
@@ -144,13 +145,21 @@ class RTSPServer(GstRtspServer.RTSPServer):
         # Pipeline for clients: Read multicast RTP -> depay -> parse -> pay -> client
         # We include h264parse and rtph264pay as requested by user for robustness.
         # udpsrc caps must match what backend sends.
+        # Added buffer-size=524288 (512KB) to udpsrc to handle simultaneous start bursts
         launch_str = (
-            f"udpsrc multicast-group={MULTICAST_GROUP} port={MULTICAST_PORT} auto-multicast=true ! "
+            f"udpsrc multicast-group={MULTICAST_GROUP} port={MULTICAST_PORT} auto-multicast=true buffer-size=524288 ! "
             f"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96 ! "
             f"rtph264depay ! h264parse ! rtph264pay name=pay0 config-interval=1 pt=96"
         )
 
         print(f"Client Launch String: {launch_str}")
+
+        # Increase Thread Pool for handling simultaneous connections
+        # Default is often small (e.g. 1-2 threads + main loop).
+        # For 100 simultaneous connects, increasing this significantly helps negotiation speed.
+        pool = GstRtspServer.RTSPThreadPool.new()
+        pool.set_max_threads(200)
+        self.set_thread_pool(pool)
 
         for i in range(1, 101):
             factory = GstRtspServer.RTSPMediaFactory()
