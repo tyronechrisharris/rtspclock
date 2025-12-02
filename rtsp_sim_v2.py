@@ -43,6 +43,8 @@ FPS = 5
 def check_port(port, host='0.0.0.0'):
     """Checks if the port is available."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        # Enable SO_REUSEADDR to allow binding even if the port is in TIME_WAIT
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind((host, port))
             return True
