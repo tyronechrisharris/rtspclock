@@ -8,6 +8,10 @@ import time
 import numpy as np
 from datetime import datetime
 
+# Platform-specific Resource Management
+if platform.system() != "Windows":
+    import resource
+
 # Platform-specific Setup for GStreamer
 if platform.system() == "Windows":
     # On Windows, we often need to ensure the GStreamer bin directory is in PATH
@@ -190,7 +194,35 @@ class RTSPServer(GstRtspServer.RTSPServer):
         self.producer.update_clients(self.client_count)
         # print(f"Client disconnected. Total: {self.client_count}")
 
+def increase_rlimit():
+    """
+    Increases the open file limit to the maximum allowed by the hard limit.
+    Essential for high-concurrency servers on macOS/Linux.
+    """
+    if platform.system() == "Windows":
+        return
+
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = hard
+        # macOS often reports 'infinity' as a very large number, but practically caps around 10240 without root.
+        # We try to set it to at least 4096 if possible.
+        if target == resource.RLIM_INFINITY:
+            target = 65536 # A reasonable upper bound for user processes
+
+        if soft < target:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            print(f"Increased open file limit: {soft} -> {target}")
+        else:
+            print(f"Open file limit is already sufficient: {soft}")
+
+    except Exception as e:
+        print(f"Warning: Failed to increase open file limit: {e}")
+
 def main():
+    # Optimize System Resources
+    increase_rlimit()
+
     # Initialize GStreamer
     try:
         Gst.init(None)
