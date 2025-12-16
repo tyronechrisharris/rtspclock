@@ -140,6 +140,25 @@ class BackendProducer:
     def update_clients(self, count):
         self.active_clients = count
 
+class ZeroLatencyFactory(GstRtspServer.RTSPMediaFactory):
+    def __init__(self, launch_str):
+        super().__init__()
+        self.set_launch(launch_str)
+        self.set_shared(True)
+        # Always-On Mode
+        self.set_suspend_mode(GstRtspServer.RTSPSuspendMode.NONE)
+
+    def do_configure(self, media):
+        # Set latency to 0 for instant playback (disables jitter buffer on server side)
+        # Note: GStreamer default is ~200ms.
+        # For a simulator on loopback/LAN, 0 is safe and feels "instant".
+        media.set_latency(0)
+
+        # Call parent configure just in case (though Python bindings sometimes handle this oddly,
+        # normally we return void or call super)
+        # GstRtspServer.RTSPMediaFactory.do_configure(self, media)
+        # In PyGObject, overriding vfuncs is automatic.
+
 class RTSPServer(GstRtspServer.RTSPServer):
     def __init__(self, producer):
         super().__init__()
@@ -148,35 +167,28 @@ class RTSPServer(GstRtspServer.RTSPServer):
 
         mounts = self.get_mount_points()
 
-        # Pipeline for clients: Read multicast RTP -> depay -> parse -> pay -> client
-        # We include h264parse and rtph264pay as requested by user for robustness.
-        # udpsrc caps must match what backend sends.
-        # Added buffer-size=524288 (512KB) to udpsrc to handle simultaneous start bursts
+        # Pipeline for clients:
+        # Simplified: udpsrc -> rtph264depay -> rtph264pay
+        # Removed h264parse for speed. Backend is already sending compliant H.264 RTP.
+        # Retained depay/pay sandwich to ensure correct SSRC/SeqNum negotiation for each client
+        # while sharing the backend multicast.
         launch_str = (
             f"udpsrc multicast-group={MULTICAST_GROUP} port={MULTICAST_PORT} auto-multicast=true buffer-size=524288 ! "
             f"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96 ! "
-            f"rtph264depay ! h264parse ! rtph264pay name=pay0 config-interval=1 pt=96"
+            f"rtph264depay ! rtph264pay name=pay0 config-interval=1 pt=96"
         )
 
         print(f"Client Launch String: {launch_str}")
 
         # Increase Thread Pool for handling simultaneous connections
-        # Default is often small (e.g. 1-2 threads + main loop).
-        # For 100 simultaneous connects, increasing this significantly helps negotiation speed.
         pool = GstRtspServer.RTSPThreadPool.new()
         pool.set_max_threads(200)
         self.set_thread_pool(pool)
 
         print("Pre-warming 100 RTSP endpoints (Always-On Mode)...")
         for i in range(1, 101):
-            factory = GstRtspServer.RTSPMediaFactory()
-            factory.set_launch(launch_str)
-            factory.set_shared(True) # Share the UDP source pipeline among clients of SAME mount point
-
-            # SUSPEND_MODE_NONE: The pipeline is active immediately and never stops.
-            # This emulates hardware cameras that are always encoding, ensuring instant client connection.
-            factory.set_suspend_mode(GstRtspServer.RTSPSuspendMode.NONE)
-
+            # Use custom factory to force 0 latency
+            factory = ZeroLatencyFactory(launch_str)
             mounts.add_factory(f"/cam{i}", factory)
 
         # Track clients
